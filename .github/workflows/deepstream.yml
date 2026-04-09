@@ -1,7 +1,7 @@
 name: Push DeepStream to Release
 
 on:
-  workflow_dispatch: # 手动点击运行
+  workflow_dispatch:
 
 jobs:
   build:
@@ -11,7 +11,6 @@ jobs:
 
     steps:
       - name: Maximize Build Space
-        # DeepStream 镜像约 15GB，必须先清理虚拟机空间
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
@@ -19,18 +18,23 @@ jobs:
           sudo docker image prune -a -f
 
       - name: Pull DeepStream Image
-        # 拉取目前最通用的 7.0 版本（包含 Triton 推理服务器）
         run: docker pull nvcr.io/nvidia/deepstream:7.0-triton-multiarch
 
       - name: Save and Compress
-        # 使用流式压缩，避免磁盘撑爆
         run: |
+          # 边导出边压缩
           docker save nvcr.io/nvidia/deepstream:7.0-triton-multiarch | gzip > deepstream_7.0.tar.gz
 
-      - name: Create Release
+      - name: Split File into 2GB Chunks
+        # 将大文件切分成 2GB 一个的小块，后缀为 .aa, .ab, .ac...
+        run: |
+          split -b 2000M deepstream_7.0.tar.gz deepstream_7.0.tar.gz.part-
+
+      - name: Create Release and Upload Chunks
         uses: softprops/action-gh-release@v1
         with:
-          files: deepstream_7.0.tar.gz
+          # 使用通配符上传所有切片文件
+          files: deepstream_7.0.tar.gz.part-*
           tag_name: v7.0-${{ github.run_number }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
