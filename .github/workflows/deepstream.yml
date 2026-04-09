@@ -1,0 +1,36 @@
+name: Push DeepStream to Release
+
+on:
+  workflow_dispatch: # 手动点击运行
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Maximize Build Space
+        # DeepStream 镜像约 15GB，必须先清理虚拟机空间
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo docker image prune -a -f
+
+      - name: Pull DeepStream Image
+        # 拉取目前最通用的 7.0 版本（包含 Triton 推理服务器）
+        run: docker pull nvcr.io/nvidia/deepstream:7.0-triton-multiarch
+
+      - name: Save and Compress
+        # 使用流式压缩，避免磁盘撑爆
+        run: |
+          docker save nvcr.io/nvidia/deepstream:7.0-triton-multiarch | gzip > deepstream_7.0.tar.gz
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: deepstream_7.0.tar.gz
+          tag_name: v7.0-${{ github.run_number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
