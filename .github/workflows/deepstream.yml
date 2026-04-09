@@ -10,31 +10,35 @@ jobs:
       contents: write
 
     steps:
-      - name: Maximize Build Space
+      - name: Maximize Build Space (彻底清理)
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
           sudo docker image prune -a -f
 
       - name: Pull DeepStream Image
         run: docker pull nvcr.io/nvidia/deepstream:7.0-triton-multiarch
 
-      - name: Save and Compress
+      - name: Save and Compress (流式处理)
         run: |
-          # 边导出边压缩
-          docker save nvcr.io/nvidia/deepstream:7.0-triton-multiarch | gzip > deepstream_7.0.tar.gz
+          # 直接存为 gz 压缩包，减少中间体积
+          docker save nvcr.io/nvidia/deepstream:7.0-triton-multiarch | gzip > temp_ds.tar.gz
+          # 压缩完立刻删除镜像，腾出空间给切片
+          docker rmi nvcr.io/nvidia/deepstream:7.0-triton-multiarch
 
-      - name: Split File into 2GB Chunks
-        # 将大文件切分成 2GB 一个的小块，后缀为 .aa, .ab, .ac...
+      - name: Split and Delete Original
         run: |
-          split -b 2000M deepstream_7.0.tar.gz deepstream_7.0.tar.gz.part-
+          # 切分成 2000M 的块
+          split -b 2000M temp_ds.tar.gz ds_7.0.part-
+          # 【关键】切分完立刻删掉那个 10GB 的 temp_ds.tar.gz，否则磁盘必爆
+          rm temp_ds.tar.gz
 
       - name: Create Release and Upload Chunks
         uses: softprops/action-gh-release@v1
         with:
-          # 使用通配符上传所有切片文件
-          files: deepstream_7.0.tar.gz.part-*
-          tag_name: v7.0-${{ github.run_number }}
+          files: ds_7.0.part-*
+          tag_name: v7.0-final
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
